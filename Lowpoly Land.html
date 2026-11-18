@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Lowpoly Land</title>
+<style>
+html,body{margin:0;height:100%;overflow:hidden;font-family:system-ui,sans-serif;background:#d9b8e6;touch-action:none}
+canvas{display:block}
+#hud{position:fixed;top:calc(12px + env(safe-area-inset-top,0px));left:14px;font-size:26px;font-weight:800;color:#fff;text-shadow:0 2px 0 #6a3a8a}
+#tip{position:fixed;top:calc(16px + env(safe-area-inset-top,0px));right:14px;font-size:14px;color:#fff;text-shadow:0 1px 0 #6a3a8a;text-align:right;max-width:40vw}
+.ov{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;color:#fff;background:rgba(110,70,160,.6);text-shadow:0 2px 0 rgba(0,0,0,.25);padding:20px}
+.ov h1{font-size:44px;margin:0 0 8px}.ov p{margin:4px 0;font-size:17px}
+button{font:800 20px system-ui,sans-serif;padding:12px 30px;border:0;border-radius:99px;background:#ffe14d;color:#6a3a8a;cursor:pointer;margin-top:16px;box-shadow:0 4px 0 #d9a800}
+#stick,#jump{display:none;position:fixed;bottom:calc(26px + env(safe-area-inset-bottom,0px))}
+#stick{left:26px;width:120px;height:120px;border-radius:50%;background:rgba(255,255,255,.3)}
+#knob{position:absolute;left:38px;top:38px;width:44px;height:44px;border-radius:50%;background:rgba(255,255,255,.9)}
+#jump{right:26px;width:90px;height:90px;border-radius:50%;background:#ffe14d;color:#6a3a8a;font:800 18px system-ui;align-items:center;justify-content:center;box-shadow:0 4px 0 #d9a800}
+@media (hover:none){#stick{display:block}#jump{display:flex}}
+</style></head><body>
+<div id="hud">★ 0 / 0</div>
+<div id="tip">Find the stars.<br>Climb the stones to the wizard tower!</div>
+<div id="stick"><div id="knob"></div></div>
+<div id="jump">JUMP</div>
+<div class="ov" id="ov"><h1>Lowpoly Land</h1>
+<p>Explore the world and collect every star.</p>
+<p>WASD / arrows: move · Space: jump (twice!) · Drag: turn camera</p>
+<button id="go">Play</button></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+const R=new THREE.WebGLRenderer({antialias:true});
+R.setPixelRatio(Math.min(devicePixelRatio,2));R.setSize(innerWidth,innerHeight);
+document.body.appendChild(R.domElement);
+const SKY=0xd9b8e6;
+const S=new THREE.Scene();S.background=new THREE.Color(SKY);S.fog=new THREE.Fog(SKY,60,170);
+const C=new THREE.PerspectiveCamera(60,innerWidth/innerHeight,.1,300);
+S.add(new THREE.HemisphereLight(0xfff2ff,0x9a7ab0,.85));
+const sun=new THREE.DirectionalLight(0xfff0d0,.9);sun.position.set(30,50,20);S.add(sun);
+addEventListener('resize',()=>{R.setSize(innerWidth,innerHeight);C.aspect=innerWidth/innerHeight;C.updateProjectionMatrix()});
+
+let seed=7;const rnd=()=>(seed=(seed*16807)%2147483647)/2147483647;
+const flat=c=>new THREE.MeshLambertMaterial({color:c,flatShading:true});
+const add=(p,g,c,x,y,z)=>{const m=new THREE.Mesh(g,flat(c));m.position.set(x,y,z);p.add(m);return m};
+const cyl=(a,b,h,n)=>new THREE.CylinderGeometry(a,b,h,n),cone=(r,h,n)=>new THREE.ConeGeometry(r,h,n),box=(w,h,d)=>new THREE.BoxGeometry(w,h,d);
+
+// terrain
+const W=-1.4;
+function H(x,z){let h=2.6*Math.sin(x*.045)*Math.cos(z*.04)+1.6*Math.sin(x*.11+1)*Math.sin(z*.09+2)+.6*Math.sin(x*.3)*Math.sin(z*.27);
+  return h-9*Math.exp(-((x-28)**2+(z-24)**2)/160)}
+{const g=new THREE.PlaneGeometry(200,200,80,80);g.rotateX(-Math.PI/2);
+ const pos=g.attributes.position,col=[],c=new THREE.Color();
+ for(let i=0;i<pos.count;i++){const x=pos.getX(i),z=pos.getZ(i),y=H(x,z);pos.setY(i,y);
+  if(y<W-1)c.set(0xc9b27a);else if(y<W+.5)c.set(0xe8cf8f);
+  else c.setHSL(.27+.04*Math.sin(x*.2+z*.13),.6,.4+Math.min(.14,Math.max(0,y*.03))+.03*Math.sin(x*.5+z*.4));
+  col.push(c.r,c.g,c.b)}
+ g.setAttribute('color',new THREE.Float32BufferAttribute(col,3));g.computeVertexNormals();
+ S.add(new THREE.Mesh(g,new THREE.MeshLambertMaterial({vertexColors:true,flatShading:true})));
+ const w=new THREE.Mesh(new THREE.PlaneGeometry(200,200),new THREE.MeshLambertMaterial({color:0x3fb4ff,transparent:true,opacity:.82}));
+ w.rotation.x=-Math.PI/2;w.position.y=W;S.add(w)}
+
+// trees
+function pine(x,z,y,sc){const g=new THREE.Group();add(g,cyl(.25,.3,1.2,6),0x7a4a2a,0,.6,0);
+  const cs=[0x2f9a4a,0x3aa655,0x2a8a6a];[[2.2,2.4,2.2],[1.7,2.2,3.5],[1.2,2,4.7]].forEach((a,i)=>add(g,cone(a[0],a[1],7),cs[(x+i)&1?i:2-i],0,a[2],0));
+  g.position.set(x,y,z);g.scale.setScalar(sc);S.add(g)}
+const CAN=[0x6cc04a,0x3fa34d,0x2e8b57,0xf0e07a,0xf4a6c0];
+function tree(x,z,y,sc,c){const g=new THREE.Group();add(g,cyl(.3,.45,2.4,6),0x7a4a2a,0,1.2,0);
+  const k=add(g,new THREE.IcosahedronGeometry(2.2,1),c,0,3.9,0);k.scale.y=.9;
+  g.position.set(x,y,z);g.scale.setScalar(sc);S.add(g)}
+for(let i=0,n=0;i<400&&n<130;i++){const x=(rnd()-.5)*185,z=(rnd()-.5)*185,y=H(x,z);
+  if(y<W+.8||Math.hypot(x,z)<8||Math.hypot(x-10,z+10)<7)continue;n++;
+  if(rnd()<.45)pine(x,z,y,.8+rnd()*.9);else tree(x,z,y,.8+rnd()*.9,CAN[Math.floor(rnd()*rnd()*5.5)%5])}
+// flowers
+{const fm=new THREE.InstancedMesh(new THREE.IcosahedronGeometry(.22,0),new THREE.MeshLambertMaterial({flatShading:true}),400),d=new THREE.Object3D(),
+ pal=[0xff6fb5,0xffe14d,0xffffff,0xb48cff,0xff9a4d];
+ for(let i=0;i<400;i++){let x,z,y;do{x=(rnd()-.5)*185;z=(rnd()-.5)*185;y=H(x,z)}while(y<W+.6);
+  d.position.set(x,y+.15,z);d.updateMatrix();fm.setMatrixAt(i,d.matrix);fm.setColorAt(i,new THREE.Color(pal[i%5]))}
+ S.add(fm)}
+// clouds
+for(let i=0;i<14;i++){const g=new THREE.Group();
+  for(let j=0;j<3;j++){const b=add(g,new THREE.IcosahedronGeometry(3+rnd()*3,1),0xffe6ee,j*4.5,rnd()*1.5,rnd()*2);b.scale.y=.6}
+  g.position.set((rnd()-.5)*220,45+rnd()*25,(rnd()-.5)*220);S.add(g)}
+
+// platforms: {x,z,r,top}
+const P=[];
+const y0=H(10,-10)+1.5,N=11,stones=[];
+for(let i=0;i<=N;i++){const x=10+i*1.7+Math.sin(i*1.2)*2,z=-10-i*2.6,top=y0+i*1.8;
+  const m=add(S,cyl(2.2,1.7,1,8),new THREE.Color().setHSL(i/N,.85,.62),x,top-.5,z);P.push({x,z,r:2.2,top});stones.push(m)}
+const IX=34,IZ=-46,IT=y0+N*1.8+.6;P.push({x:IX,z:IZ,r:10,top:IT});
+// wizard island
+const I=new THREE.Group();I.position.set(IX,IT,IZ);S.add(I);
+add(I,cyl(10,10,1,12),0x78c850,0,-.5,0);
+{const u=add(I,cone(10,10,8),0x8a5a33,0,-6,0);u.rotation.x=Math.PI}
+const T=(g,c,x,y,z)=>add(I,g,c,x,y,z);
+T(cyl(3,3.7,4,8),0xb9b2a7,0,2,0);T(cyl(3.05,3.05,.35,8),0x8a5a33,0,4.1,0);
+T(cyl(2.9,3,3,8),0xe9d9b9,0,5.8,0);T(cyl(3,3,.3,8),0x8a5a33,0,7.4,0);
+T(cyl(4.6,5.2,.3,8),0x6a5a98,0,7.8,0);T(cone(3.1,6,8),0x5d4f8a,0,10.8,0);
+T(cone(.8,2.6,6),0x5d4f8a,-.6,14.4,0).rotation.z=.7;
+T(box(.9,2.4,.9),0x8a8680,2.4,8.8,-1);
+T(cyl(.18,.22,1.6,6),0xd9a520,-3.2,8.6,1.5).rotation.z=1.1;
+T(box(2.1,2.9,.3),0x9b948a,0,1.4,3.5);T(box(1.5,2.4,.4),0x7a4a26,0,1.2,3.6);
+const WM=new THREE.MeshBasicMaterial({color:0xffc04d});
+[[.5,5.8],[2.2,5.8],[3.9,5.8],[5.2,5.8],[1.6,3.2]].forEach(a=>{const m=new THREE.Mesh(box(.7,1.1,.2),WM);
+  m.position.set(Math.sin(a[0])*2.95,a[1],Math.cos(a[0])*2.95);m.rotation.y=a[0];I.add(m)});
+{const m=new THREE.Mesh(box(.7,.9,.2),WM);m.position.set(0,8.8,2.5);I.add(m)}
+T(new THREE.SphereGeometry(.9,8,6),0x2b2536,6,.7,2);
+{const cm=new THREE.Mesh(cyl(.7,.7,.1,8),new THREE.MeshBasicMaterial({color:0x76ff4d}));cm.position.set(6,1.5,2);I.add(cm)}
+[[-4.5,1.5],[4,-4.5],[-5,-3.5],[3.8,4.4]].forEach(a=>{T(cyl(.12,.15,.5,6),0xf2e6d0,a[0],.25,a[1]);
+  T(new THREE.SphereGeometry(.4,8,6,0,6.28,0,1.57),0xe0352b,a[0],.5,a[1])});
+for(let i=0;i<5;i++){const a=2.2+i*.75,g=new THREE.Group();
+  add(g,cyl(.2,.25,1,6),0x7a4a2a,0,.5,0);add(g,cone(1.5,2.2,7),0x2f9a4a,0,2,0);add(g,cone(1,1.8,7),0x3aa655,0,3.2,0);
+  g.position.set(Math.cos(a)*8,0,Math.sin(a)*8-1);I.add(g)}
+const smoke=[0,1,2].map(i=>{const m=add(I,new THREE.SphereGeometry(.5,6,5),0xffffff,2.4,10,-1);m.userData.t=i/3;return m});
+// stars
+const stars=[];
+function star(x,y,z){const s=new THREE.Mesh(new THREE.OctahedronGeometry(.6),new THREE.MeshLambertMaterial({color:0xffe14d,emissive:0xffa800}));
+  s.position.set(x,y,z);s.userData.by=y;S.add(s);stars.push(s)}
+for(let i=0,n=0;i<300&&n<10;i++){const x=(rnd()-.5)*160,z=(rnd()-.5)*160,y=H(x,z);
+  if(y<W+.8||Math.hypot(x,z)<10)continue;n++;star(x,y+1.7,z)}
+star(IX+7,IT+1.7,IZ);star(IX-6,IT+1.7,IZ+5);
+
+// animals
+const animals=[];
+function deer(){const g=new THREE.Group();
+  add(g,box(.7,.8,1.7),0xe08a3c,0,1.5,0);add(g,box(.72,.6,.5),0xf7efe4,0,1.4,.55);
+  [[-.22,-.65],[.22,-.65],[-.22,.65],[.22,.65]].forEach(a=>add(g,box(.18,1,.18),0xc96f2b,a[0],.5,a[1]));
+  add(g,box(.35,.8,.35),0xe08a3c,0,2,.9);add(g,box(.4,.4,.7),0xe08a3c,0,2.45,1.2);
+  [-1,1].forEach(s=>add(g,box(.08,.9,.08),0xf7efe4,s*.2,3,1.1).rotation.z=-s*.3);
+  add(g,box(.2,.3,.2),0xf7efe4,0,1.8,-.9);g.scale.setScalar(.9);return g}
+function fox(){const g=new THREE.Group();
+  add(g,box(.45,.45,1),0xe0652b,0,.55,0);
+  [[-.15,-.35],[.15,-.35],[-.15,.35],[.15,.35]].forEach(a=>add(g,box(.12,.35,.12),0x3a2a22,a[0],.18,a[1]));
+  add(g,box(.4,.35,.4),0xe0652b,0,.8,.6);add(g,box(.2,.2,.25),0xffffff,0,.72,.85);
+  [-1,1].forEach(s=>add(g,cone(.1,.25,4),0xe0652b,s*.14,1.05,.55));
+  add(g,box(.25,.25,.7),0xe0652b,0,.6,-.85);add(g,box(.26,.26,.25),0xffffff,0,.6,-1.3);return g}
+for(let i=0;i<12;i++){let x,z;do{x=(rnd()-.5)*150;z=(rnd()-.5)*150}while(H(x,z)<W+.8);
+  const g=i<6?deer():fox();g.position.set(x,H(x,z),z);S.add(g);animals.push({g,tx:x,tz:z,t:0,sp:i<6?1.6:2.4})}
+
+// player
+const pl=new THREE.Group(),model=new THREE.Group();pl.add(model);S.add(pl);
+add(model,new THREE.SphereGeometry(.5,20,16),0xff3d8b,0,.5,0);add(model,cone(.45,.6,16),0x3dd6ff,0,1.15,0);
+[-.18,.18].forEach(x=>{add(model,new THREE.SphereGeometry(.12,8,8),0xffffff,x,.65,.42);add(model,new THREE.SphereGeometry(.06,8,8),0x222222,x,.65,.52)});
+[-.35,.35].forEach(x=>add(model,new THREE.SphereGeometry(.18,8,8),0xffe14d,x,.1,.1));
+
+const ground=(x,z,y)=>{let g=Math.max(H(x,z),W-.6);for(const p of P)if(p.top<=y+.5&&Math.hypot(x-p.x,z-p.z)<p.r)g=Math.max(g,p.top);return g};
+let vel=0,jumps=0,yaw=0,got=0,playing=false,inW=false,safe=[0,H(0,0),0];
+const hud=document.getElementById('hud'),ov=document.getElementById('ov');
+function reset(){pl.position.set(0,H(0,0),0);vel=0;jumps=0;yaw=0;got=0;safe=[0,H(0,0),0];
+  stars.forEach(s=>s.visible=true);hud.textContent='★ 0 / '+stars.length}
+reset();
+const K={};let jq=false,joy={x:0,y:0},drag=null;
+addEventListener('keydown',e=>{if(e.code=='Space'){if(!K.Space)jq=true;e.preventDefault()}K[e.code]=true});
+addEventListener('keyup',e=>K[e.code]=false);
+document.getElementById('jump').addEventListener('pointerdown',e=>{jq=true;e.stopPropagation()});
+R.domElement.addEventListener('pointerdown',e=>drag=e.clientX);
+addEventListener('pointerup',()=>drag=null);
+addEventListener('pointermove',e=>{if(drag!==null){yaw-=(e.clientX-drag)*.006;drag=e.clientX}});
+const st=document.getElementById('stick'),kn=document.getElementById('knob');
+function sj(e){const r=st.getBoundingClientRect();let x=(e.clientX-r.left-60)/50,y=(e.clientY-r.top-60)/50,l=Math.hypot(x,y);if(l>1){x/=l;y/=l}
+  joy={x,y};kn.style.left=38+x*38+'px';kn.style.top=38+y*38+'px'}
+st.addEventListener('pointerdown',e=>{st.setPointerCapture(e.pointerId);sj(e);e.stopPropagation()});
+st.addEventListener('pointermove',e=>{if(e.buttons)sj(e)});
+st.addEventListener('pointerup',()=>{joy={x:0,y:0};kn.style.left=kn.style.top='38px'});
+
+const clock=new THREE.Clock(),cv=new THREE.Vector3();
+function loop(){
+  requestAnimationFrame(loop);
+  const dt=Math.min(clock.getDelta(),.05),t=clock.elapsedTime;
+  stars.forEach((s,i)=>{s.rotation.y=t*2;s.position.y=s.userData.by+Math.sin(t*3+i)*.25});
+  smoke.forEach(s=>{s.userData.t=(s.userData.t+dt*.25)%1;const k=s.userData.t;s.position.y=10+k*5;s.scale.setScalar(.5+k);s.material.transparent=true;s.material.opacity=1-k});
+  animals.forEach(a=>{a.t-=dt;let dx=a.tx-a.g.position.x,dz=a.tz-a.g.position.z,d=Math.hypot(dx,dz);
+    if(a.t<=0||d<.5){const nx=a.g.position.x+(rnd()-.5)*20,nz=a.g.position.z+(rnd()-.5)*20;
+      if(H(nx,nz)>W+.4&&Math.abs(nx)<90&&Math.abs(nz)<90){a.tx=nx;a.tz=nz}a.t=3+rnd()*4;dx=a.tx-a.g.position.x;dz=a.tz-a.g.position.z;d=Math.hypot(dx,dz)}
+    if(d>.5){a.g.position.x+=dx/d*a.sp*dt;a.g.position.z+=dz/d*a.sp*dt;a.g.rotation.y=Math.atan2(dx,dz)}
+    a.g.position.y=H(a.g.position.x,a.g.position.z)+Math.abs(Math.sin(t*6+a.sp*9))*.08});
+  if(playing){
+    let ix=(K.KeyD||K.ArrowRight?1:0)-(K.KeyA||K.ArrowLeft?1:0)+joy.x;
+    let iz=(K.KeyW||K.ArrowUp?1:0)-(K.KeyS||K.ArrowDown?1:0)-joy.y;
+    const l=Math.hypot(ix,iz);if(l>1){ix/=l;iz/=l}
+    const mx=-Math.sin(yaw)*iz+Math.cos(yaw)*ix,mz=-Math.cos(yaw)*iz-Math.sin(yaw)*ix,sp=inW?5:10;
+    const p=pl.position;p.x=Math.max(-95,Math.min(95,p.x+mx*sp*dt));p.z=Math.max(-95,Math.min(95,p.z+mz*sp*dt));
+    if(l>.1)model.rotation.y=Math.atan2(mx,mz);
+    const dx=p.x-IX,dz=p.z-IZ,dd=Math.hypot(dx,dz);
+    if(dd<4&&p.y<IT+8){p.x=IX+dx/dd*4;p.z=IZ+dz/dd*4}
+    if(jq&&jumps<2){vel=jumps?12:13;jumps++}jq=false;
+    vel-=34*dt;p.y+=vel*dt;
+    const g=ground(p.x,p.z,p.y);
+    if(p.y<=g&&vel<=0){p.y=g;vel=0;jumps=0;if(g>W-.5)safe=[p.x,g,p.z]}
+    inW=H(p.x,p.z)<W-.1&&p.y<W+.3;
+    if(p.y<-15){p.set(safe[0],safe[1]+1,safe[2]);vel=0}
+    stars.forEach(s=>{if(s.visible&&s.position.distanceTo(cv.set(p.x,p.y+.8,p.z))<1.5){
+      s.visible=false;got++;hud.textContent='★ '+got+' / '+stars.length;
+      if(got==stars.length){playing=false;ov.innerHTML='<h1>You found them all! 🌟</h1><p>The wizard is very impressed.</p><button id="go">Explore again</button>';ov.style.display='flex';document.getElementById('go').onclick=start}}});
+  }
+  const p=pl.position,cx=p.x+Math.sin(yaw)*12,cz=p.z+Math.cos(yaw)*12,cy=Math.max(p.y+6,H(cx,cz)+2);
+  C.position.lerp(cv.set(cx,cy,cz),.12);C.lookAt(p.x,p.y+1.2,p.z);
+  R.render(S,C);
+}
+function start(){reset();ov.style.display='none';playing=true}
+document.getElementById('go').onclick=start;
+loop();
+</script></body></html>
